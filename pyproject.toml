@@ -1,16 +1,17 @@
 [build-system]
 requires = ['setuptools']
+build-backend = 'setuptools.build_meta'
 
 
 [project]
 name = 'text2qti'
 description = 'Create quizzes in QTI format from Markdown-based plain text'
 readme = 'README.md'
-requires-python = '>= 3.8'
+requires-python = '>= 3.10'
 authors = [
     {name = 'Geoffrey M. Poore', email = 'gpoore@gmail.com'}
 ]
-license = {file = 'LICENSE.txt'}
+license-files = ['LICENSE*', 'CHANGELOG*']
 dynamic = ['version']
 keywords = [
     'QTI',
@@ -25,14 +26,13 @@ keywords = [
 ]
 dependencies = [
     'bespon>=0.7.0',
-    'markdown>=3.4.4',
+    'markdown>=3.10.2',
 ]
 # https://pypi.python.org/pypi?:action=list_classifiers
 classifiers = [
     'Development Status :: 4 - Beta',
     'Environment :: Console',
     'Intended Audience :: Education',
-    'License :: OSI Approved :: BSD License',
     'Operating System :: OS Independent',
     'Programming Language :: Python',
     'Topic :: Education :: Testing',
@@ -40,6 +40,7 @@ classifiers = [
 
 
 [project.urls]
+homepage = 'http://github.com/gpoore/text2qti'
 repository = 'http://github.com/gpoore/text2qti'
 changelog = 'http://github.com/gpoore/text2qti/blob/master/CHANGELOG.md'
 
@@ -52,8 +53,7 @@ text2qti_tk = 'text2qti.gui.tk:main'
 
 
 [tool.setuptools]
-packages = ['text2qti']
-license-files = ['LICENSE*', 'CHANGELOG*']
+packages = ['text2qti', 'text2qti.gui']
 
 [tool.setuptools.dynamic]
 version = {attr = 'text2qti.__version__'}
