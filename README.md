@@ -169,7 +169,7 @@ b)  Another answer.
 
 ## Installation
 
-Install **Python 3.8+** if it is not already available on your machine.  See
+Install **Python 3.10+** if it is not already available on your machine.  See
 https://www.python.org/, or use the package manager or app store for your
 operating system.  Depending on your use case, you may want to consider a
 Python distribution like [Anaconda](https://www.anaconda.com/distribution/)
@@ -183,14 +183,15 @@ running
 python -m pip install setuptools
 ```
 on the command line.  Depending on your system, you may need to use `python3`
-instead of `python`.  This will often be the case for Linux and OS X.
+instead of `python`.  This will often be the case for Linux and macOS.
 
 Install text2qti by running this on the command line:
 ```
 python -m pip install text2qti
 ```
 Depending on your system, you may need to use `python3` instead of `python`.
-This will often be the case for Linux and OS X.
+This will often be the case for Linux and macOS.  You may also need to add
+`--user`.
 
 
 ### Upgrading
@@ -199,7 +200,7 @@ This will often be the case for Linux and OS X.
 python -m pip install text2qti --upgrade
 ```
 Depending on your system, you may need to use `python3` instead of `python`.
-This will often be the case for Linux and OS X.
+This will often be the case for Linux and macOS.
 
 
 ### Installing the development version
@@ -209,7 +210,7 @@ download `text2qti` from [GitHub](https://github.com/gpoore/text2qti) and
 extract the files.  A few different ways to install the development version
 are listed below.  Depending on your system, you may need to use `python3`
 instead of `python` in the commands below.  This will often be the case for
-Linux and OS X.
+Linux and macOS.
 
 * You can install using the included `setup.py` by running
   ```
@@ -289,35 +290,6 @@ difficult to tell them apart.  Another option is to rename quizzes after
 importing them.  Note that unlike most other text, the title is treated as
 plain text, not Markdown, due to the QTI format.
 
-When you run `text2qti` for the first time, it will attempt to create a
-configuration file called `.text2qti.bespon` in your home or user directory.
-It will also ask for an institutional LaTeX rendering URL.  This is only
-needed if you plan to use LaTeX math and if the default URL
-`/equation_images/` will not work with your system.  In typical cases, you can
-simply press ENTER to continue with the default value.
- * If you use Canvas, log into your account and look in the browser address
-   bar.  You will typically see an address that starts with something like
-   `institution.instructure.com/` or `canvas.institution.edu/`, with
-   `institution` replaced by the name of your school or an abbreviation for
-   it.  The LateX rendering URL that you want to use will then be something
-   like `https://institution.instructure.com/equation_images/` or
-   `https://canvas.institution.edu/equation_images/`, with `institution`
-   replaced by the appropriate value for your school.  If the URL is like the
-   second form, you may need to replace the `.edu` domain with the appropriate
-   value for your institution.
- * If you use other educational software that handles LaTeX in a manner
-   compatible with Canvas, consult the documentation for your software.  Or
-   perhaps create a simple quiz within the software using its built-in tools,
-   then export the quiz to QTI and look through the resulting output to find
-   the URL.
- * If you are using educational software that does not handle LaTeX in a
-   manner compatible with Canvas, try the `--pandoc-mathml` command-line
-   option when creating QTI files (note that this requires that
-   [Pandoc](https://pandoc.org/) be installed).  If that does not work, please
-   open an issue requesting support for that software, and include as much
-   information as possible about how that software processes LaTeX.
-
-
 
 ## Additional features
 
@@ -379,7 +351,8 @@ For code to be executed, there are a few requirements:
 * As a security measure, code execution is disabled by default, so executable
   code blocks will trigger an error.  Run `text2qti` with the option
   `--run-code-blocks` to enable code execution, or set `run_code_blocks =
-  true` in the text2qti config file in your user or home directory.
+  true` in the text2qti config file `.text2qti.bespon` in your user or home
+  directory.
 
 * The text immediately after the opening fence must have the form
   `{.lang .run}` or `{.lang .run executable=<executable>}`.  This is inspired
@@ -416,7 +389,7 @@ For code to be executed, there are a few requirements:
   than `.python` when working with operating systems other than Windows, or
   when working with a Windows installation that includes a `python3`
   executable or symlink.  It is also possible to be even more specific by
-  using something like `.python3.8`.
+  using something like `.python3.14`.
 
 Each code block is executed in its own process, so data and variables are not
 shared between code blocks.
@@ -549,10 +522,10 @@ resorting to HTML.
 ### LaTeX
 
 By default, text2qti supports LaTeX using a Canvas LaTeX rendering URL that
-defaults to `/equation_images/`.  This can be customized during installation,
-or by editing the configuration file `.text2qti.bespon` in your home or user
-directory.  It is possible to convert LaTeX to MathML instead with the
-`--pandoc-mathml` command-line option.  This requires that
+defaults to `/equation_images/`.  This can be customized by setting
+`latex_render_url = "<URL>"` in a configuration file `.text2qti.bespon` in
+your home or user directory.  It is possible to convert LaTeX to MathML
+instead with the `--pandoc-mathml` command-line option.  This requires that
 [Pandoc](https://pandoc.org/) be installed for converting LaTeX to MathML.
 For example, to create a quiz you might run a command like this:
 ```

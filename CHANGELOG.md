@@ -11,6 +11,10 @@
 *  Top-level (unindented) code blocks without correct code execution
    attributes now immediately result in an informative error.
 
+*  Removed prompt for LaTeX rendering URL on first run after initial
+   installation (#79).
+
+
 
 ## v0.7.1 (2023-10-29)
 
