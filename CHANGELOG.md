@@ -1,6 +1,17 @@
 # Change Log
 
 
+## v0.8.0 (dev)
+
+*  Added `--preview` command-line argument.  This writes a basic JSON
+   representation of the quiz to STDOUT and will be used by the upcoming
+   text2qti VS Code extension.  The JSON representation is not yet stable and
+   will change in future releases.
+
+*  Top-level (unindented) code blocks without correct code execution
+   attributes now immediately result in an informative error.
+
+
 ## v0.7.1 (2023-10-29)
 
 * Updated `.bat` file for generating Windows GUI executable to account for

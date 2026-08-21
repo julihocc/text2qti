@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2020-2021, Geoffrey M. Poore
+# Copyright (c) 2020-2026, Geoffrey M. Poore
 # All rights reserved.
 #
 # Licensed under the BSD 3-Clause License:
@@ -22,7 +22,7 @@ from .config import Config
 from .quiz import Quiz
 from .qti import QTI
 from .export import quiz_to_pandoc
-
+from .preview import quiz_to_preview_json
 
 
 
@@ -50,6 +50,8 @@ def main():
                                  'Pandoc Markdown output is only suitable for use with LaTeX or HTML; PDF output requires Pandoc plus LaTeX. '
                                  'With this option, solutions and QTI may differ if executable code blocks generate problems using random numbers. '
                                  'Consider creating solutions and QTI together, or setting a seed for the random number generator so it is reproducible.')
+    parser.add_argument('--preview', action='store_const', const=True,
+                        help='Write quiz to STDOUT in JSON format for a compatible previewer. No QTI is created.')
     parser.add_argument('file',
                         help='File to convert from text to QTI')
     args = parser.parse_args()
@@ -119,6 +121,9 @@ def main():
         if not all(x.suffix.lower() in ('.md', '.markdown', '.pdf', '.html') for x in solutions_paths):
             invalid_extensions = ', '.join(x.suffix for x in solutions_paths if x.suffix not in ('.md', '.markdown', '.pdf', '.html'))
             raise Text2qtiError(f'Unsupported export format(s) {invalid_extensions} for solutions; use .md, .markdown, .pdf, or .html')
+    if args.preview:
+        solutions_paths = None
+        qti_path = None
     os.chdir(file_path.parent)
     try:
         # Quiz and any solutions should only be generated once each so that
@@ -170,5 +175,7 @@ def main():
         if qti_path is not None:
             qti = QTI(quiz)
             qti.save(qti_path)
+        if args.preview:
+            print(quiz_to_preview_json(quiz), file=sys.stdout)
     finally:
         os.chdir(cwd)

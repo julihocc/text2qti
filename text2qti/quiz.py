@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2020-2021, Geoffrey M. Poore
+# Copyright (c) 2020-2026, Geoffrey M. Poore
 # All rights reserved.
 #
 # Licensed under the BSD 3-Clause License:
 # http://opensource.org/licenses/BSD-3-Clause
 #
 
+
+from __future__ import annotations
 
 '''
 Parse text into a Quiz object that contains a list of Question objects, each
@@ -111,13 +113,15 @@ class TextRegion(object):
     '''
     A text region between questions.
     '''
-    def __init__(self, *, index: int, md: Markdown):
+    def __init__(self, *, index: int, md: Markdown, linenum_start: int, linenum_end: int):
         self.title_raw: Optional[str] = None
         self.title_xml = ''
         self.text_raw: Optional[str] = None
         self.text_html_xml = ''
         self.md = md
         self._index = index
+        self.linenum_start = linenum_start
+        self.linenum_end = linenum_end
 
     def _set_id(self):
         h = hashlib.blake2b()
@@ -128,7 +132,7 @@ class TextRegion(object):
         h.update(self.text_html_xml.encode('utf8'))
         self.id = h.hexdigest()[:64]
 
-    def set_title(self, text: str):
+    def set_title(self, text: str, linenum_start: int, linenum_end: int):
         if self.title_raw is not None:
             raise Text2qtiError('Text title has already been set')
         if self.text_raw is not None:
@@ -136,13 +140,15 @@ class TextRegion(object):
         self.title_raw = text
         self.title_xml = self.md.xml_escape(text)
         self._set_id()
+        self.linenum_end = linenum_end
 
-    def set_text(self, text: str):
+    def set_text(self, text: str, linenum_start: int, linenum_end: int):
         if self.text_raw is not None:
             raise Text2qtiError('Text has already been set')
         self.text_raw = text
         self.text_html_xml = self.md.md_to_html_xml(text)
         self._set_id()
+        self.linenum_end = linenum_end
 
 
 
@@ -156,7 +162,8 @@ class Choice(object):
     '''
     def __init__(self, text: str, *,
                  correct: bool, shortans: bool=False,
-                 question_hash_digest: bytes, md: Markdown):
+                 question_hash_digest: bytes, md: Markdown,
+                 linenum_start: int, linenum_end: int):
         self.choice_raw = text
         if shortans:
             self.choice_xml = md.xml_escape(text)
@@ -173,14 +180,17 @@ class Choice(object):
         else:
             self.id = hashlib.blake2b(self.choice_html_xml.encode('utf8'), key=question_hash_digest).hexdigest()[:64]
         self.md = md
+        self.linenum_start = linenum_start
+        self.linenum_end = linenum_end
 
-    def append_feedback(self, text: str):
+    def append_feedback(self, text: str, linenum_start: int, linenum_end: int):
         if self.shortans:
             raise Text2qtiError('Feedback cannot be specified for individual short answer responses, only for the question')
         if self.feedback_raw is not None:
             raise Text2qtiError('Feedback can only be specified once')
         self.feedback_raw = text
         self.feedback_html_xml = self.md.md_to_html_xml(text)
+        self.linenum_end = linenum_end
 
 
 class Question(object):
@@ -188,7 +198,9 @@ class Question(object):
     A question, along with a list of possible choices and optional feedback of
     various types.
     '''
-    def __init__(self, text: str, *, quiz: 'Quiz', title: Optional[str], points: Optional[str], md: Markdown):
+    def __init__(self, text: str, *,
+                 quiz: Quiz, title: Optional[str], points: Optional[str],
+                 md: Markdown, linenum_start: int, linenum_end: int):
         # Question type is set once it is known.  For true/false or multiple
         # choice, this is done during .finalize(), once all choices are
         # available.  For essay, this is done as soon as essay response is
@@ -243,9 +255,11 @@ class Question(object):
         self.hash_digest = h.digest()
         self.id = h.hexdigest()[:64]
         self.md = md
+        self.linenum_start = linenum_start
+        self.linenum_end = linenum_end
 
 
-    def append_feedback(self, text: str):
+    def append_feedback(self, text: str, linenum_start: int, linenum_end: int):
         if self.type is not None and not self.choices:
             raise Text2qtiError('Question feedback must immediately follow the question')
         if not self.choices:
@@ -256,25 +270,28 @@ class Question(object):
             if self.quiz.feedback_is_solution:
                 self.solution = text
         else:
-            self.choices[-1].append_feedback(text)
+            self.choices[-1].append_feedback(text, linenum_start, linenum_end)
+        self.linenum_end = linenum_end
 
-    def append_correct_feedback(self, text: str):
+    def append_correct_feedback(self, text: str, linenum_start: int, linenum_end: int):
         if self.type is not None:
             raise Text2qtiError('Correct feedback can only be specified for questions')
         if self.correct_feedback_raw is not None:
             raise Text2qtiError('Feedback can only be specified once')
         self.correct_feedback_raw = text
         self.correct_feedback_html_xml = self.md.md_to_html_xml(text)
+        self.linenum_end = linenum_end
 
-    def append_incorrect_feedback(self, text: str):
+    def append_incorrect_feedback(self, text: str, linenum_start: int, linenum_end: int):
         if self.type is not None:
             raise Text2qtiError('Incorrect feedback can only be specified for questions')
         if self.incorrect_feedback_raw is not None:
             raise Text2qtiError('Feedback can only be specified once')
         self.incorrect_feedback_raw = text
         self.incorrect_feedback_html_xml = self.md.md_to_html_xml(text)
+        self.linenum_end = linenum_end
 
-    def append_solution(self, text: str):
+    def append_solution(self, text: str, linenum_start: int, linenum_end: int):
         if self.type is not None:
             raise Text2qtiError('Solutions can only be specified for questions')
         if self.solution is not None:
@@ -282,66 +299,77 @@ class Question(object):
         if self.quiz.feedback_is_solution:
             raise Text2qtiError('Solutions syntax with "!" is disabled for quizzes with setting "feedback is solution: true"')
         self.solution = text
+        self.linenum_end = linenum_end
 
-    def append_mctf_correct_choice(self, text: str):
+    def append_mctf_correct_choice(self, text: str, linenum_start: int, linenum_end: int):
         if self.type is None:
             self.type = 'multiple_choice_question'
         elif self.type != 'multiple_choice_question':
             raise Text2qtiError(f'Question type "{self.type}" does not support multiple choice')
-        choice = Choice(text, correct=True, question_hash_digest=self.hash_digest, md=self.md)
+        choice = Choice(text, correct=True, question_hash_digest=self.hash_digest, md=self.md,
+                        linenum_start=linenum_start, linenum_end=linenum_end)
         if choice.choice_html_xml in self._choice_set:
             raise Text2qtiError('Duplicate choice for question')
         self._choice_set.add(choice.choice_html_xml)
         self.choices.append(choice)
         self.correct_choices += 1
+        self.linenum_end = linenum_end
 
-    def append_mctf_incorrect_choice(self, text: str):
+    def append_mctf_incorrect_choice(self, text: str, linenum_start: int, linenum_end: int):
         if self.type is None:
             self.type = 'multiple_choice_question'
         elif self.type != 'multiple_choice_question':
             raise Text2qtiError(f'Question type "{self.type}" does not support multiple choice')
-        choice = Choice(text, correct=False, question_hash_digest=self.hash_digest, md=self.md)
+        choice = Choice(text, correct=False, question_hash_digest=self.hash_digest, md=self.md,
+                        linenum_start=linenum_start, linenum_end=linenum_end)
         if choice.choice_html_xml in self._choice_set:
             raise Text2qtiError('Duplicate choice for question')
         self._choice_set.add(choice.choice_html_xml)
         self.choices.append(choice)
+        self.linenum_end = linenum_end
 
-    def append_shortans_correct_choice(self, text: str):
+    def append_shortans_correct_choice(self, text: str, linenum_start: int, linenum_end: int):
         if self.type is None:
             self.type = 'short_answer_question'
         elif self.type != 'short_answer_question':
             raise Text2qtiError(f'Question type "{self.type}" does not support short answer')
-        choice = Choice(text, correct=True, shortans=True, question_hash_digest=self.hash_digest, md=self.md)
+        choice = Choice(text, correct=True, shortans=True, question_hash_digest=self.hash_digest, md=self.md,
+                        linenum_start=linenum_start, linenum_end=linenum_end)
         if choice.choice_xml in self._choice_set:
             raise Text2qtiError('Duplicate choice for question')
         self._choice_set.add(choice.choice_xml)
         self.choices.append(choice)
         self.correct_choices += 1
+        self.linenum_end = linenum_end
 
-    def append_multans_correct_choice(self, text: str):
+    def append_multans_correct_choice(self, text: str, linenum_start: int, linenum_end: int):
         if self.type is None:
             self.type = 'multiple_answers_question'
         elif self.type != 'multiple_answers_question':
             raise Text2qtiError(f'Question type "{self.type}" does not support multiple answers')
-        choice = Choice(text, correct=True, question_hash_digest=self.hash_digest, md=self.md)
+        choice = Choice(text, correct=True, question_hash_digest=self.hash_digest, md=self.md,
+                        linenum_start=linenum_start, linenum_end=linenum_end)
         if choice.choice_html_xml in self._choice_set:
             raise Text2qtiError('Duplicate choice for question')
         self._choice_set.add(choice.choice_html_xml)
         self.choices.append(choice)
         self.correct_choices += 1
+        self.linenum_end = linenum_end
 
-    def append_multans_incorrect_choice(self, text: str):
+    def append_multans_incorrect_choice(self, text: str, linenum_start: int, linenum_end: int):
         if self.type is None:
             self.type = 'multiple_answers_question'
         elif self.type != 'multiple_answers_question':
             raise Text2qtiError(f'Question type "{self.type}" does not support multiple answers')
-        choice = Choice(text, correct=False, question_hash_digest=self.hash_digest, md=self.md)
+        choice = Choice(text, correct=False, question_hash_digest=self.hash_digest, md=self.md,
+                        linenum_start=linenum_start, linenum_end=linenum_end)
         if choice.choice_html_xml in self._choice_set:
             raise Text2qtiError('Duplicate choice for question')
         self._choice_set.add(choice.choice_html_xml)
         self.choices.append(choice)
+        self.linenum_end = linenum_end
 
-    def append_essay(self, text: str):
+    def append_essay(self, text: str, linenum_start: int, linenum_end: int):
         if text:
             # The essay response syntax provides no text to process; the
             # `text` argument just gives all append functions the same form.
@@ -353,8 +381,9 @@ class Question(object):
         self.type = 'essay_question'
         if any(x is not None for x in (self.correct_feedback_raw, self.incorrect_feedback_raw)):
             raise Text2qtiError(f'Question type "{self.type}" does not support correct/incorrect feedback')
+        self.linenum_end = linenum_end
 
-    def append_upload(self, text: str):
+    def append_upload(self, text: str, linenum_start: int, linenum_end: int):
         if text:
             # The upload response syntax provides no text to process; the
             # `text` argument just gives all append functions the same form.
@@ -366,8 +395,9 @@ class Question(object):
         self.type = 'file_upload_question'
         if any(x is not None for x in (self.correct_feedback_raw, self.incorrect_feedback_raw)):
             raise Text2qtiError(f'Question type "{self.type}" does not support correct/incorrect feedback')
+        self.linenum_end = linenum_end
 
-    def append_numerical(self, text: str):
+    def append_numerical(self, text: str, linenum_start: int, linenum_end: int):
         if self.type is not None:
             if self.type == 'numerical_question':
                 raise Text2qtiError(f'Cannot specify numerical response multiple times')
@@ -437,6 +467,7 @@ class Question(object):
             raise Text2qtiError('Invalid numerical response; need "[<min>, <max>]" or "<number> +- <margin>" or "<integer>"')
         if abs(min) < 1e-4 or abs(max) < 1e-4:
             raise Text2qtiError('Invalid numerical response; all acceptable values must have a magnitude >= 0.0001')
+        self.linenum_end = linenum_end
 
 
     def finalize(self):
@@ -470,7 +501,7 @@ class Group(object):
     A group of questions.  A random subset of the questions in a group is
     actually displayed.
     '''
-    def __init__(self):
+    def __init__(self, *, linenum_start: int, linenum_end: int):
         self.pick = 1
         self._pick_is_set = False
         self.solutions_pick: Optional[int] = None
@@ -480,8 +511,10 @@ class Group(object):
         self._question_points_possible: Optional[Union[int, float]] = None
         self.title_raw: Optional[str] = None
         self.title_xml = 'Group'
+        self.linenum_start = linenum_start
+        self.linenum_end = linenum_end
 
-    def append_group_pick(self, text: str):
+    def append_group_pick(self, text: str, linenum_start: int, linenum_end: int):
         if self.questions:
             raise Text2qtiError('Question group options must be set at the very start of the group')
         if self._pick_is_set:
@@ -495,8 +528,9 @@ class Group(object):
         if self.solutions_pick is not None and self.pick > self.solutions_pick:
             raise Text2qtiError('"pick" value must be less than or equal to "solutions pick" value')
         self._pick_is_set = True
+        self.linenum_end = linenum_end
 
-    def append_group_solutions_pick(self, text: str):
+    def append_group_solutions_pick(self, text: str, linenum_start: int, linenum_end: int):
         if self.questions:
             raise Text2qtiError('Question group options must be set at the very start of the group')
         if self.solutions_pick is not None:
@@ -509,8 +543,9 @@ class Group(object):
             raise Text2qtiError('"solutions pick" value is invalid (must be positive number)')
         if self.solutions_pick < self.pick:
             raise Text2qtiError('"solutions pick" value must be greater than or equal to "pick" value')
+        self.linenum_end = linenum_end
 
-    def append_group_points_per_question(self, text: str):
+    def append_group_points_per_question(self, text: str, linenum_start: int, linenum_end: int):
         if self.questions:
             raise Text2qtiError('Question group options must be set at the very start of the group')
         if self._points_per_question_is_set:
@@ -522,13 +557,15 @@ class Group(object):
         if self.points_per_question <= 0:
             raise Text2qtiError(f'"Points per question" value is invalid (must be positive number):')
         self._points_per_question_is_set = True
+        self.linenum_end = linenum_end
 
-    def append_question(self, question: Question):
+    def append_question(self, question: Question, linenum_start: int, linenum_end: int):
         if self._question_points_possible is None:
             self._question_points_possible = question.points_possible
         elif question.points_possible != self._question_points_possible:
             raise Text2qtiError('Question groups must only contain questions with the same point value')
         self.questions.append(question)
+        self.linenum_end = linenum_end
 
     def finalize(self):
         if len(self.questions) < self.pick:
@@ -540,20 +577,26 @@ class Group(object):
             h.update(digest)
         self.hash_digest = h.digest()
         self.id = h.hexdigest()[:64]
+        if self.questions:
+            self.linenum_end = self.questions[-1].linenum_end
 
 class GroupStart(object):
     '''
     Start delim for a group of questions.
     '''
-    def __init__(self, group: Group):
+    def __init__(self, group: Group, *, linenum_start: int, linenum_end: int):
         self.group = group
+        self.linenum_start = linenum_start
+        self.linenum_end = linenum_end
 
 class GroupEnd(object):
     '''
     End delim for a group of questions.
     '''
-    def __init__(self, group: Group):
+    def __init__(self, group: Group, *, linenum_start: int, linenum_end: int):
         self.group = group
+        self.linenum_start = linenum_start
+        self.linenum_end = linenum_end
 
 
 
@@ -601,6 +644,8 @@ class Quiz(object):
         self.md = Markdown(config)
         self.images: Dict[str, Image] = self.md.images
         self._next_question_attr = {}
+        self._next_question_attr_linenum_start: int | None = None
+        self._next_question_attr_linenum_end: int | None = None
 
         # Determine how to interpret `.python` for executable code blocks.
         # If `python3` exists, use it instead of `python` if `python` does not
@@ -622,11 +667,14 @@ class Quiz(object):
             start_multiline_comment_pattern = comment_patterns['start_multiline_comment']
             end_multiline_comment_pattern = comment_patterns['end_multiline_comment']
             line_comment_pattern = comment_patterns['line_comment']
-            n_line_iter = iter(x for x in enumerate(string.splitlines()))
-            n, line = next(n_line_iter, (0, None))
+            linenum_line_iter = iter(x for x in enumerate(string.split('\n'), 1))
+            linenum, line = next(linenum_line_iter, (0, None))
             lookahead = False
-            n_code_start = 0
+            lookahead_offset = 0
+            linenum_final = string.count('\n') + 1
+            linenum_last_code_start = 0
             while line is not None:
+                linenum_start = linenum
                 match = start_re.match(line)
                 if match:
                     action = match.lastgroup
@@ -635,38 +683,41 @@ class Quiz(object):
                         info = line.lstrip('`').strip()
                         info_match = start_code_supported_info_re.match(info)
                         if info_match is None:
-                            pass
+                            raise Text2qtiError(
+                                f'In {self.source_name} on line {linenum}:\n'
+                                'Code block is missing valid exec attributes'
+                            )
                         else:
                             executable = info_match.group('executable')
                             if executable is not None:
                                 if executable.startswith('"'):
-                                    executable = executable[1:-1]
+                                    executable = executable.strip('"')
                                 executable = pathlib.Path(executable).expanduser().as_posix()
                             else:
                                 executable = info_match.group('lang')
                                 if executable == 'python':
                                     executable = python_executable
                             delim = '`'*(len(line) - len(line.lstrip('`')))
-                            n_code_start = n
+                            linenum_last_code_start = linenum_start
                             code_lines = []
-                            n, line = next(n_line_iter, (0, None))
+                            linenum, line = next(linenum_line_iter, (linenum + 1, None))
                             # No lookahead here; all lines are consumed
                             while line is not None and not (line.startswith(delim) and line[len(delim):] == line.lstrip('`')):
                                 code_lines.append(line)
-                                n, line = next(n_line_iter, (0, None))
+                                linenum, line = next(linenum_line_iter, (linenum + 1, None))
                             if line is None:
-                                raise Text2qtiError(f'In {self.source_name} on line {n}:\nCode closing fence is missing')
+                                raise Text2qtiError(f'In {self.source_name} on line {linenum}:\nCode closing fence is missing')
                             if line.lstrip('`').strip():
-                                raise Text2qtiError(f'In {self.source_name} on line {n+1}:\nCode closing fence is missing')
+                                raise Text2qtiError(f'In {self.source_name} on line {linenum}:\nCode closing fence is missing')
                             code_lines.append('\n')
                             code = '\n'.join(code_lines)
                             try:
                                 stdout = self._run_code(executable, code)
                             except Exception as e:
-                                raise Text2qtiError(f'In {self.source_name} on line {n_code_start+1}:\n{e}')
-                            code_n_line_iter = ((n_code_start, stdout_line) for stdout_line in stdout.splitlines())
-                            n_line_iter = itertools.chain(code_n_line_iter, n_line_iter)
-                            n, line = next(n_line_iter, (0, None))
+                                raise Text2qtiError(f'In {self.source_name} on line {linenum_last_code_start}:\n{e}')
+                            code_linenum_line_iter = ((linenum_last_code_start, stdout_line) for stdout_line in stdout.split('\n'))
+                            linenum_line_iter = itertools.chain(code_linenum_line_iter, linenum_line_iter)
+                            linenum, line = next(linenum_line_iter, (linenum + 1, None))
                             continue
                     elif action in multi_line:
                         if start_patterns[action].endswith(':'):
@@ -674,72 +725,74 @@ class Quiz(object):
                         else:
                             indent_expandtabs = ' '*len(line[:match.end()].expandtabs(4))
                         text_lines = [text]
-                        n, line = next(n_line_iter, (0, None))
-                        line_expandtabs = line.expandtabs(4) if line is not None else None
+                        linenum, line = next(linenum_line_iter, (linenum + 1, None))
                         lookahead = True
-                        while (line is not None and
-                                (not line or line.isspace() or
-                                    indent_expandtabs is None or line_expandtabs.startswith(indent_expandtabs))):
+                        while line is not None:
                             if not line or line.isspace():
                                 if action in multi_para:
                                     text_lines.append('')
                                 else:
                                     break
                             else:
+                                line_expandtabs = line.expandtabs(4)
                                 if indent_expandtabs is None:
                                     if not line.startswith((' ', '\t')):
                                         break
                                     indent_expandtabs = ' '*(len(line_expandtabs)-len(line_expandtabs.lstrip(' ')))
                                     if len(indent_expandtabs) < 2:
-                                        raise Text2qtiError(f'In {self.source_name} on line {n+1}:\nIndentation must be at least 2 spaces or 1 tab here')
+                                        raise Text2qtiError(f'In {self.source_name} on line {linenum}:\nIndentation must be at least 2 spaces or 1 tab here')
+                                elif not line_expandtabs.startswith(indent_expandtabs):
+                                    break
                                 # The `rstrip()` prevents trailing double
                                 # spaces from becoming `<br />`.
                                 text_lines.append(line_expandtabs[len(indent_expandtabs):].rstrip())
-                            n, line = next(n_line_iter, (0, None))
-                            line_expandtabs = line.expandtabs(4) if line is not None else None
-                        if text_lines and not text_lines[-1]:
-                            while text_lines and not text_lines[-1]:
-                                text_lines.pop()
+                            linenum, line = next(linenum_line_iter, (linenum + 1, None))
+                        while text_lines and not text_lines[-1]:
+                            text_lines.pop()
+                            linenum -= 1
+                            lookahead_offset += 1
                         text = '\n'.join(text_lines)
                 elif line.startswith(line_comment_pattern):
-                    n, line = next(n_line_iter, (0, None))
+                    linenum, line = next(linenum_line_iter, (linenum + 1, None))
                     continue
                 elif line.startswith(start_multiline_comment_pattern):
                     if line.strip() != start_multiline_comment_pattern:
-                        raise Text2qtiError(f'In {self.source_name} on line {n+1}:\nUnexpected content after "{start_multiline_comment_pattern}"')
-                    n, line = next(n_line_iter, (0, None))
+                        raise Text2qtiError(f'In {self.source_name} on line {linenum}:\nUnexpected content after "{start_multiline_comment_pattern}"')
+                    linenum, line = next(linenum_line_iter, (linenum + 1, None))
                     while line is not None and not line.startswith(end_multiline_comment_pattern):
-                        n, line = next(n_line_iter, (0, None))
+                        linenum, line = next(linenum_line_iter, (linenum + 1, None))
                     if line is None:
-                        raise Text2qtiError(f'In {self.source_name} on line {n+1}:\nf"{start_multiline_comment_pattern}" without following "{end_multiline_comment_pattern}"')
+                        raise Text2qtiError(f'In {self.source_name} on line {linenum}:\nf"{start_multiline_comment_pattern}" without following "{end_multiline_comment_pattern}"')
                     if line.strip() != end_multiline_comment_pattern:
-                        raise Text2qtiError(f'In {self.source_name} on line {n+1}:\nUnexpected content after "{end_multiline_comment_pattern}"')
-                    n, line = next(n_line_iter, (0, None))
+                        raise Text2qtiError(f'In {self.source_name} on line {linenum}:\nUnexpected content after "{end_multiline_comment_pattern}"')
+                    linenum, line = next(linenum_line_iter, (linenum + 1, None))
                     continue
                 elif line.startswith(end_multiline_comment_pattern):
-                    raise Text2qtiError(f'In {self.source_name} on line {n+1}:\n"{end_multiline_comment_pattern}" without preceding "{start_multiline_comment_pattern}"')
+                    raise Text2qtiError(f'In {self.source_name} on line {linenum}:\n"{end_multiline_comment_pattern}" without preceding "{start_multiline_comment_pattern}"')
                 else:
                     action = None
                     text = line
                 try:
-                    parse_actions[action](text)
+                    parse_actions[action](text, linenum_start, linenum if not lookahead else linenum - 1)
                 except Text2qtiError as e:
-                    if lookahead and n != n_code_start:
-                        raise Text2qtiError(f'In {self.source_name} on line {n}:\n{e}')
-                    raise Text2qtiError(f'In {self.source_name} on line {n+1}:\n{e}')
-                if not lookahead:
-                    n, line = next(n_line_iter, (0, None))
+                    if lookahead and linenum != linenum_last_code_start:
+                        raise Text2qtiError(f'In {self.source_name} on line {linenum - 1}:\n{e}')
+                    raise Text2qtiError(f'In {self.source_name} on line {linenum}:\n{e}')
+                if lookahead:
+                    linenum += lookahead_offset
+                else:
+                    linenum, line = next(linenum_line_iter, (linenum + 1, None))
                 lookahead = False
             if not self.questions_and_delims:
                 raise Text2qtiError('No questions were found')
             if self._current_group is not None:
-                raise Text2qtiError(f'In {self.source_name} on line {len(string.splitlines())}:\nQuestion group never ended')
+                raise Text2qtiError(f'In {self.source_name} on line {linenum_final}:\nQuestion group never ended')
             last_question_or_delim = self.questions_and_delims[-1]
             if isinstance(last_question_or_delim, Question):
                 try:
                     last_question_or_delim.finalize()
                 except Text2qtiError as e:
-                    raise Text2qtiError(f'In {self.source_name} on line {len(string.splitlines())}:\n{e}')
+                    raise Text2qtiError(f'In {self.source_name} on line {linenum_final}:\n{e}')
 
             points_possible = 0
             digests = []
@@ -814,7 +867,7 @@ class Quiz(object):
             raise Text2qtiError(f'Failed to decode output of executed code:\n{e}')
         return stdout_str
 
-    def append_quiz_title(self, text: str):
+    def append_quiz_title(self, text: str, linenum_start: int, linenum_end: int):
         if any(x is not None for x in (self.shuffle_answers_raw, self.show_correct_answers_raw,
                                        self.one_question_at_a_time_raw, self.cant_go_back_raw)):
             raise Text2qtiError('Must give quiz title before quiz options')
@@ -829,7 +882,7 @@ class Quiz(object):
         self.title_raw = text
         self.title_xml = self.md.xml_escape(text)
 
-    def append_quiz_description(self, text: str):
+    def append_quiz_description(self, text: str, linenum_start: int, linenum_end: int):
         if any(x is not None for x in (self.shuffle_answers_raw, self.show_correct_answers_raw,
                                        self.one_question_at_a_time_raw, self.cant_go_back_raw)):
             raise Text2qtiError('Must give quiz description before quiz options')
@@ -842,7 +895,7 @@ class Quiz(object):
         self.description_raw = text
         self.description_html_xml = self.md.md_to_html_xml(text)
 
-    def append_quiz_shuffle_answers(self, text: str):
+    def append_quiz_shuffle_answers(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self.questions_and_delims:
@@ -854,7 +907,7 @@ class Quiz(object):
         self.shuffle_answers_raw = text
         self.shuffle_answers_xml = text.lower()
 
-    def append_quiz_show_correct_answers(self, text: str):
+    def append_quiz_show_correct_answers(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self.questions_and_delims:
@@ -866,7 +919,7 @@ class Quiz(object):
         self.show_correct_answers_raw = text
         self.show_correct_answers_xml = text.lower()
 
-    def append_quiz_one_question_at_a_time(self, text: str):
+    def append_quiz_one_question_at_a_time(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self.questions_and_delims:
@@ -878,7 +931,7 @@ class Quiz(object):
         self.one_question_at_a_time_raw = text
         self.one_question_at_a_time_xml = text.lower()
 
-    def append_quiz_cant_go_back(self, text: str):
+    def append_quiz_cant_go_back(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self.questions_and_delims:
@@ -892,7 +945,7 @@ class Quiz(object):
         self.cant_go_back_raw = text
         self.cant_go_back_xml = text.lower()
 
-    def append_quiz_feedback_is_solution(self, text: str):
+    def append_quiz_feedback_is_solution(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self.questions_and_delims:
@@ -906,7 +959,7 @@ class Quiz(object):
         else:
             raise Text2qtiError('Expected option value "true" or "false"')
 
-    def append_quiz_solutions_sample_groups(self, text: str):
+    def append_quiz_solutions_sample_groups(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self.questions_and_delims:
@@ -920,7 +973,7 @@ class Quiz(object):
         else:
             raise Text2qtiError('Expected option value "true" or "false"')
 
-    def append_quiz_solutions_randomize_groups(self, text: str):
+    def append_quiz_solutions_randomize_groups(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self.questions_and_delims:
@@ -934,18 +987,19 @@ class Quiz(object):
         else:
             raise Text2qtiError('Expected option value "true" or "false"')
 
-    def append_text_title(self, text: str):
+    def append_text_title(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self.questions_and_delims:
             last_question_or_delim = self.questions_and_delims[-1]
             if isinstance(last_question_or_delim, Question):
                 last_question_or_delim.finalize()
-        text_region = TextRegion(index=len(self.questions_and_delims), md=self.md)
-        text_region.set_title(text)
+        text_region = TextRegion(index=len(self.questions_and_delims), md=self.md,
+                                 linenum_start=linenum_start, linenum_end=linenum_end)
+        text_region.set_title(text, linenum_start, linenum_end)
         self.questions_and_delims.append(text_region)
 
-    def append_text(self, text: str):
+    def append_text(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self.questions_and_delims:
@@ -953,17 +1007,19 @@ class Quiz(object):
             if isinstance(last_question_or_delim, Question):
                 last_question_or_delim.finalize()
             if isinstance(last_question_or_delim, TextRegion) and last_question_or_delim.text_raw is None:
-                last_question_or_delim.set_text(text)
+                last_question_or_delim.set_text(text, linenum_start, linenum_end)
             else:
-                text_region = TextRegion(index=len(self.questions_and_delims), md=self.md)
-                text_region.set_text(text)
+                text_region = TextRegion(index=len(self.questions_and_delims), md=self.md,
+                                         linenum_start=linenum_start, linenum_end=linenum_end)
+                text_region.set_text(text, linenum_start, linenum_end)
                 self.questions_and_delims.append(text_region)
         else:
-            text_region = TextRegion(index=len(self.questions_and_delims), md=self.md)
-            text_region.set_text(text)
+            text_region = TextRegion(index=len(self.questions_and_delims), md=self.md,
+                                     linenum_start=linenum_start, linenum_end=linenum_end)
+            text_region.set_text(text, linenum_start, linenum_end)
             self.questions_and_delims.append(text_region)
 
-    def append_question(self, text: str):
+    def append_question(self, text: str, linenum_start: int, linenum_end: int):
         if self.questions_and_delims:
             last_question_or_delim = self.questions_and_delims[-1]
             if isinstance(last_question_or_delim, Question):
@@ -972,28 +1028,37 @@ class Quiz(object):
                             quiz=self,
                             title=self._next_question_attr.get('title'),
                             points=self._next_question_attr.get('points'),
-                            md=self.md)
+                            md=self.md,
+                            linenum_start=self._next_question_attr_linenum_start or linenum_start,
+                            linenum_end=linenum_end)
         self._next_question_attr = {}
+        self._next_question_attr_linenum_start = None
+        self._next_question_attr_linenum_end = None
         if question.question_html_xml in self.question_set:
             raise Text2qtiError('Duplicate question')
         self.question_set.add(question.question_html_xml)
         self.questions_and_delims.append(question)
         if self._current_group is not None:
-            self._current_group.append_question(question)
+            self._current_group.append_question(question, linenum_start, linenum_end)
 
-    def append_question_title(self, text: str):
+    def append_question_title(self, text: str, linenum_start: int, linenum_end: int):
         if 'title' in self._next_question_attr:
             raise Text2qtiError('Title for next question has already been set')
         if 'points' in self._next_question_attr:
             raise Text2qtiError('Title for next question must be set before point value')
         self._next_question_attr['title'] = text
+        self._next_question_attr_linenum_start = linenum_start
+        self._next_question_attr_linenum_end = linenum_end
 
-    def append_question_points(self, text: str):
+    def append_question_points(self, text: str, linenum_start: int, linenum_end: int):
         if 'points' in self._next_question_attr:
             raise Text2qtiError('Points for next question has already been set')
         self._next_question_attr['points'] = text
+        if not self._next_question_attr_linenum_start:
+            self._next_question_attr_linenum_start = linenum_start
+        self._next_question_attr_linenum_end = linenum_end
 
-    def append_feedback(self, text: str):
+    def append_feedback(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1001,9 +1066,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have feedback without a question')
-        last_question_or_delim.append_feedback(text)
+        last_question_or_delim.append_feedback(text, linenum_start, linenum_end)
 
-    def append_correct_feedback(self, text: str):
+    def append_correct_feedback(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1011,9 +1076,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have feedback without a question')
-        last_question_or_delim.append_correct_feedback(text)
+        last_question_or_delim.append_correct_feedback(text, linenum_start, linenum_end)
 
-    def append_incorrect_feedback(self, text: str):
+    def append_incorrect_feedback(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1021,9 +1086,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have feedback without a question')
-        last_question_or_delim.append_incorrect_feedback(text)
+        last_question_or_delim.append_incorrect_feedback(text, linenum_start, linenum_end)
 
-    def append_solution(self, text: str):
+    def append_solution(self, text: str, linenum_start: int, linenum_end: int):
         if self.feedback_is_solution:
             raise Text2qtiError('Quiz option "feedback is solution" is "true"; '
                                 '"!" solution syntax is disabled and solutions must be provided as feedback ("...") rather than separately')
@@ -1034,9 +1099,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have a solution without a question')
-        last_question_or_delim.append_solution(text)
+        last_question_or_delim.append_solution(text, linenum_start, linenum_end)
 
-    def append_mctf_correct_choice(self, text: str):
+    def append_mctf_correct_choice(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1044,9 +1109,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have a choice without a question')
-        last_question_or_delim.append_mctf_correct_choice(text)
+        last_question_or_delim.append_mctf_correct_choice(text, linenum_start, linenum_end)
 
-    def append_mctf_incorrect_choice(self, text: str):
+    def append_mctf_incorrect_choice(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1054,9 +1119,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have a choice without a question')
-        last_question_or_delim.append_mctf_incorrect_choice(text)
+        last_question_or_delim.append_mctf_incorrect_choice(text, linenum_start, linenum_end)
 
-    def append_shortans_correct_choice(self, text: str):
+    def append_shortans_correct_choice(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1064,9 +1129,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have an answer without a question')
-        last_question_or_delim.append_shortans_correct_choice(text)
+        last_question_or_delim.append_shortans_correct_choice(text, linenum_start, linenum_end)
 
-    def append_multans_correct_choice(self, text: str):
+    def append_multans_correct_choice(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1074,9 +1139,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have a choice without a question')
-        last_question_or_delim.append_multans_correct_choice(text)
+        last_question_or_delim.append_multans_correct_choice(text, linenum_start, linenum_end)
 
-    def append_multans_incorrect_choice(self, text: str):
+    def append_multans_incorrect_choice(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1084,9 +1149,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have a choice without a question')
-        last_question_or_delim.append_multans_incorrect_choice(text)
+        last_question_or_delim.append_multans_incorrect_choice(text, linenum_start, linenum_end)
 
-    def append_essay(self, text: str):
+    def append_essay(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1094,9 +1159,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have an essay response without a question')
-        last_question_or_delim.append_essay(text)
+        last_question_or_delim.append_essay(text, linenum_start, linenum_end)
 
-    def append_upload(self, text: str):
+    def append_upload(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1104,9 +1169,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have an upload response without a question')
-        last_question_or_delim.append_upload(text)
+        last_question_or_delim.append_upload(text, linenum_start, linenum_end)
 
-    def append_numerical(self, text: str):
+    def append_numerical(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if not self.questions_and_delims:
@@ -1114,9 +1179,9 @@ class Quiz(object):
         last_question_or_delim = self.questions_and_delims[-1]
         if not isinstance(last_question_or_delim, Question):
             raise Text2qtiError('Cannot have a numerical response without a question')
-        last_question_or_delim.append_numerical(text)
+        last_question_or_delim.append_numerical(text, linenum_start, linenum_end)
 
-    def append_start_group(self, text: str):
+    def append_start_group(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if text:
@@ -1127,11 +1192,11 @@ class Quiz(object):
             last_question_or_delim = self.questions_and_delims[-1]
             if isinstance(last_question_or_delim, Question):
                 last_question_or_delim.finalize()
-        group = Group()
+        group = Group(linenum_start=linenum_start, linenum_end=linenum_end)
         self._current_group = group
-        self.questions_and_delims.append(GroupStart(group))
+        self.questions_and_delims.append(GroupStart(group, linenum_start=linenum_start, linenum_end=linenum_end))
 
-    def append_end_group(self, text: str):
+    def append_end_group(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if text:
@@ -1143,37 +1208,37 @@ class Quiz(object):
             if isinstance(last_question_or_delim, Question):
                 last_question_or_delim.finalize()
         self._current_group.finalize()
-        self.questions_and_delims.append(GroupEnd(self._current_group))
+        self.questions_and_delims.append(GroupEnd(self._current_group, linenum_start=linenum_start, linenum_end=linenum_end))
         self._current_group = None
 
-    def append_group_pick(self, text: str):
+    def append_group_pick(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self._current_group is None:
             raise Text2qtiError('No question group for setting properties')
-        self._current_group.append_group_pick(text)
+        self._current_group.append_group_pick(text, linenum_start, linenum_end)
 
-    def append_group_solutions_pick(self, text: str):
+    def append_group_solutions_pick(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self._current_group is None:
             raise Text2qtiError('No question group for setting properties')
-        self._current_group.append_group_solutions_pick(text)
+        self._current_group.append_group_solutions_pick(text, linenum_start, linenum_end)
 
-    def append_group_points_per_question(self, text: str):
+    def append_group_points_per_question(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self._current_group is None:
             raise Text2qtiError('No question group for setting properties')
-        self._current_group.append_group_points_per_question(text)
+        self._current_group.append_group_points_per_question(text, linenum_start, linenum_end)
 
-    def append_start_code(self, text: str):
+    def append_start_code(self, text: str, linenum_start: int, linenum_end: int):
         raise Text2qtiError('Invalid code block start')
 
-    def append_end_code(self, text: str):
+    def append_end_code(self, text: str, linenum_start: int, linenum_end: int):
         raise Text2qtiError('Code block end missing code block start')
 
-    def append_unknown(self, text: str):
+    def append_unknown(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if text and not text.isspace():

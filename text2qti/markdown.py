@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2020, Geoffrey M. Poore
+# Copyright (c) 2020-2026, Geoffrey M. Poore
 # All rights reserved.
 #
 # Licensed under the BSD 3-Clause License:
@@ -506,10 +506,9 @@ class Markdown(object):
         '''
         return self.skip_or_html_comment_or_code_math_siunitx_re.sub(self._html_comment_or_inline_code_math_siunitx_dispatch, string)
 
-    def md_to_html_xml(self, markdown_string: str, strip_p_tags: bool=False) -> str:
+    def md_to_html(self, markdown_string: str, strip_p_tags: bool=False) -> str:
         '''
-        Convert the Markdown in a string to HTML, then escape the HTML for
-        embedding in XML.
+        Convert the Markdown in a string to HTML.
         '''
         markdown_string_processed_latex = self.sub_math_siunitx_to_canvas_img(markdown_string)
         try:
@@ -521,6 +520,14 @@ class Markdown(object):
                 html = html[3:]
             if html.endswith('</p>'):
                 html = html[:-4]
+        return html
+
+    def md_to_html_xml(self, markdown_string: str, strip_p_tags: bool=False) -> str:
+        '''
+        Convert the Markdown in a string to HTML, then escape the HTML for
+        embedding in XML.
+        '''
+        html = self.md_to_html(markdown_string, strip_p_tags)
         xml = self.xml_escape(html, squotes=False, dquotes=False)
         return xml
 
