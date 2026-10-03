@@ -16,9 +16,6 @@ from .quiz import Quiz, Question, GroupStart, GroupEnd, TextRegion
 from .markdown import Markdown
 
 
-markdown = Markdown()
-
-
 # https://daringfireball.net/projects/markdown/syntax
 _md_escape_chars_re = re.compile(r'[\\`*_{}\[\]()#+\-.!]')
 
@@ -205,12 +202,15 @@ _templates['divider'] = '{0}\n\n'.format('-'*78)
 
 def question_to_markdown(question: Question, *,
                          solutions: bool, unordered: bool,
-                         show_points: bool=False) -> str:
+                         show_points: bool=False,
+                         md: Markdown | None = None) -> str:
     '''
     Convert a question to Markdown
     '''
     if not solutions:
         raise NotImplementedError
+    if md is None:
+        md = Markdown()
 
     quiz_md = []
 
@@ -221,7 +221,7 @@ def question_to_markdown(question: Question, *,
         quiz_md.append('@.  ')
     if show_points:
         quiz_md.append('**[{0}]** '.format(question.points_possible))
-    quiz_md.append(indent(markdown.md_to_pandoc(question.question_raw), 4, first_line=False))
+    quiz_md.append(indent(md.md_to_pandoc(question.question_raw), 4, first_line=False))
     quiz_md.append('\n\n')
 
     if question.type in ('true_false_question', 'multiple_choice_question'):
@@ -231,7 +231,7 @@ def question_to_markdown(question: Question, *,
                 quiz_md.append(indent(_templates['mctf_correct_choice_start'], 4))
             else:
                 quiz_md.append(indent(_templates['mctf_choice_start'], 4))
-            quiz_md.append(indent(markdown.md_to_pandoc(choice.choice_raw), 4))
+            quiz_md.append(indent(md.md_to_pandoc(choice.choice_raw), 4))
             quiz_md.append('\n\n')
             if solutions and choice.correct:
                 quiz_md.append(indent(_templates['mctf_correct_choice_end'], 4))
@@ -245,7 +245,7 @@ def question_to_markdown(question: Question, *,
                 quiz_md.append(indent(_templates['multans_correct_choice_start'], 4))
             else:
                 quiz_md.append(indent(_templates['multans_choice_start'], 4))
-            quiz_md.append(indent(markdown.md_to_pandoc(choice.choice_raw), 4))
+            quiz_md.append(indent(md.md_to_pandoc(choice.choice_raw), 4))
             quiz_md.append('\n\n')
             if solutions and choice.correct:
                 quiz_md.append(indent(_templates['multans_correct_choice_end'], 4))
@@ -256,7 +256,7 @@ def question_to_markdown(question: Question, *,
         if solutions:
             quiz_md.append(indent(_templates['choices_start'], 4))
             quiz_md.append(indent(_templates['generic_correct_choice_start'], 4))
-            quiz_md.append(indent(' | '.join(markdown.md_to_pandoc(choice.choice_raw) for choice in question.choices), 4))
+            quiz_md.append(indent(' | '.join(md.md_to_pandoc(choice.choice_raw) for choice in question.choices), 4))
             quiz_md.append('\n\n')
             quiz_md.append(indent(_templates['generic_correct_choice_end'], 4))
             quiz_md.append(indent(_templates['choices_end'], 4))
@@ -298,7 +298,7 @@ def question_to_markdown(question: Question, *,
 
     if solutions and question.solution is not None:
         quiz_md.append(indent(_templates['solution_start'], 4))
-        quiz_md.append(indent(markdown.md_to_pandoc(question.solution), 4))
+        quiz_md.append(indent(md.md_to_pandoc(question.solution), 4))
         quiz_md.append('\n\n')
         quiz_md.append(indent(_templates['solution_end'], 4))
 
@@ -313,6 +313,7 @@ def quiz_to_pandoc(quiz: Quiz, *, solutions=False) -> str:
     if not solutions:
         raise NotImplementedError
 
+    md = Markdown()
     quiz_md = []
 
     title = md_escape(quiz.title_raw or 'Quiz')
@@ -333,7 +334,7 @@ def quiz_to_pandoc(quiz: Quiz, *, solutions=False) -> str:
     quiz_md.append(meta)
 
     if quiz.description_raw:
-        quiz_md.append(markdown.md_to_pandoc(quiz.description_raw))
+        quiz_md.append(md.md_to_pandoc(quiz.description_raw))
         quiz_md.append('\n\n')
         quiz_md.append(_templates['divider'])
 
@@ -347,7 +348,7 @@ def quiz_to_pandoc(quiz: Quiz, *, solutions=False) -> str:
                     quiz_md.append(_templates['divider'])
                 quiz_md.append('## {0}\n\n'.format(md_escape(question_or_delim.title_raw.replace('\n', ' '))))
             if question_or_delim.text_raw:
-                quiz_md.append(markdown.md_to_pandoc(question_or_delim.text_raw))
+                quiz_md.append(md.md_to_pandoc(question_or_delim.text_raw))
                 quiz_md.append('\n\n')
             quiz_md.append(_templates['divider'])
             continue
@@ -387,10 +388,10 @@ def quiz_to_pandoc(quiz: Quiz, *, solutions=False) -> str:
                     quiz_md.append(_templates['random_questions_start'])
                 if quiz.solutions_randomize_groups:
                     for question in random.choices(question_or_delim.group.questions, num_questions_displayed):
-                        quiz_md.append(question_to_markdown(question, solutions=solutions, unordered=unordered))
+                        quiz_md.append(question_to_markdown(question, solutions=solutions, unordered=unordered, md=md))
                 else:
                     for question in question_or_delim.group.questions[:num_questions_displayed]:
-                        quiz_md.append(question_to_markdown(question, solutions=solutions, unordered=unordered))
+                        quiz_md.append(question_to_markdown(question, solutions=solutions, unordered=unordered, md=md))
                 if unordered:
                     quiz_md.append(_templates['random_questions_end'])
                 if group_needs_divider:
@@ -403,7 +404,7 @@ def quiz_to_pandoc(quiz: Quiz, *, solutions=False) -> str:
         if isinstance(question_or_delim, Question):
             if in_group:
                 continue
-            quiz_md.append(question_to_markdown(question_or_delim, solutions=solutions, unordered=in_group))
+            quiz_md.append(question_to_markdown(question_or_delim, solutions=solutions, unordered=in_group, md=md))
             continue
         raise TypeError
 

@@ -8,7 +8,6 @@
 #
 
 
-import os
 import pathlib
 import shutil
 import time
@@ -16,8 +15,8 @@ import tkinter as tk
 import tkinter.filedialog
 import webbrowser
 from ..config import Config
+from ..convert import read_quiz_text, write_qti
 from ..err import Text2qtiError
-from ..qti import QTI
 from ..quiz import Quiz
 from .. import version
 
@@ -229,13 +228,9 @@ def main():
 
         file_path = pathlib.Path(file_name)
         try:
-            text = file_path.read_text(encoding='utf-8-sig')  # Handle BOM for Windows
-        except FileNotFoundError:
-            error_message = f'File "{file_path}" does not exist.'
-        except PermissionError as e:
-            error_message = f'File "{file_path}" cannot be read due to permission error. Technical details:\n\n{e}'
-        except UnicodeDecodeError as e:
-            error_message = f'File "{file_path}" is not encoded in valid UTF-8. Technical details:\n\n{e}'
+            text = read_quiz_text(file_path)
+        except Text2qtiError as e:
+            error_message = str(e)
         except Exception as e:
             error_message = f'An error occurred in reading the quiz file. Technical details:\n\n{e}'
         if error_message:
@@ -243,18 +238,13 @@ def main():
             run_message_text.insert(tk.INSERT, error_message)
             run_message_text['fg'] = 'red'
             return
-        cwd = pathlib.Path.cwd()
-        os.chdir(file_path.parent)
         try:
-            quiz = Quiz(text, config=config, source_name=file_path.as_posix())
-            qti = QTI(quiz)
-            qti.save(f'{file_path.stem}.zip')
+            quiz = Quiz(text, config=config, source_name=file_path.as_posix(), resource_path=file_path.parent)
+            write_qti(quiz, file_path.parent / f'{file_path.stem}.zip')
         except Text2qtiError as e:
             error_message = f'Quiz creation failed:\n\n{e}'
         except Exception as e:
             error_message = f'Quiz creation failed unexpectedly. Technical details:\n\n{e}'
-        finally:
-            os.chdir(cwd)
         if error_message:
             run_message_text.delete(1.0, tk.END)
             run_message_text.insert(tk.INSERT, error_message)

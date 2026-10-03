@@ -39,6 +39,10 @@ classifiers = [
 ]
 
 
+[project.optional-dependencies]
+dev = ['pytest']
+
+
 [project.urls]
 homepage = 'http://github.com/gpoore/text2qti'
 repository = 'http://github.com/gpoore/text2qti'

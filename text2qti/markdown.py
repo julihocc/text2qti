@@ -95,6 +95,8 @@ class Text2qtiImagePattern(ImageInlineProcessor):
         src = node.attrib.get('src')
         if src and not any(src.startswith(x) for x in ('http://', 'https://')):
             src_path = pathlib.Path(src).expanduser()
+            if not src_path.is_absolute():
+                src_path = self.text2qti_md.base_dir / src_path
             try:
                 data = src_path.read_bytes()
             except FileNotFoundError:
@@ -131,8 +133,13 @@ class Markdown(object):
     siunitx macros are extracted via regex and then converted into plain
     LaTeX, since Canvas LaTeX support does not cover siunitx.
     '''
-    def __init__(self, config: Optional[Config]=None):
+    def __init__(self, config: Optional[Config]=None, base_dir: Optional[pathlib.Path]=None):
         self.config = config
+        if base_dir is None:
+            base_dir = pathlib.Path.cwd()
+        elif isinstance(base_dir, str):
+            base_dir = pathlib.Path(base_dir)
+        self.base_dir = base_dir
 
         markdown_processor = markdown.Markdown(extensions=md_extensions)
         markdown_image_processor = Text2qtiImagePattern(IMAGE_LINK_RE, markdown_processor, self)
@@ -162,8 +169,8 @@ class Markdown(object):
 
 
     def _prep_cache(self):
-        self._cache_path = pathlib.Path('_text2qti_cache.zip')
-        self._cache_lock_path = pathlib.Path('_text2qti_cache.lock')
+        self._cache_path = self.base_dir / '_text2qti_cache.zip'
+        self._cache_lock_path = self.base_dir / '_text2qti_cache.lock'
 
         max_lock_wait = 2
         lock_check_interval = 0.1

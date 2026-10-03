@@ -518,7 +518,7 @@ class Group(object):
         if self.questions:
             raise Text2qtiError('Question group options must be set at the very start of the group')
         if self._pick_is_set:
-            Text2qtiError('"Pick" has already been set for this question group')
+            raise Text2qtiError('"Pick" has already been set for this question group')
         try:
             self.pick = int(text)
         except Exception as e:
@@ -534,7 +534,7 @@ class Group(object):
         if self.questions:
             raise Text2qtiError('Question group options must be set at the very start of the group')
         if self.solutions_pick is not None:
-            Text2qtiError('"solutions pick" has already been set for this question group')
+            raise Text2qtiError('"solutions pick" has already been set for this question group')
         try:
             self.solutions_pick = int(text)
         except Exception as e:
@@ -549,7 +549,7 @@ class Group(object):
         if self.questions:
             raise Text2qtiError('Question group options must be set at the very start of the group')
         if self._points_per_question_is_set:
-            Text2qtiError('"Points per question" has already been set for this question group')
+            raise Text2qtiError('"Points per question" has already been set for this question group')
         try:
             self.points_per_question = int(text)
         except Exception as e:
@@ -569,7 +569,7 @@ class Group(object):
 
     def finalize(self):
         if len(self.questions) < self.pick:
-            raise Text2qtiError(f'Question group only contains {len(self.questions)} questions, needs at least {self.pick+1}')
+            raise Text2qtiError(f'Question group only contains {len(self.questions)} questions, needs at least {self.pick}')
         if self.solutions_pick is not None and len(self.questions) < self.solutions_pick:
             raise Text2qtiError(f'Question group only contains {len(self.questions)} questions, needs at least {self.solutions_pick}')
         h = hashlib.blake2b()
@@ -615,10 +615,12 @@ class Quiz(object):
         if resource_path is not None:
             if isinstance(resource_path, str):
                 resource_path = pathlib.Path(resource_path)
-            else:
+            elif not isinstance(resource_path, pathlib.Path):
                 raise TypeError
+            resource_path = resource_path.expanduser()
             if not resource_path.is_dir():
                 raise Text2qtiError(f'Resource path "{resource_path.as_posix()}" does not exist')
+            resource_path = resource_path.resolve()
         self.resource_path = resource_path
         self.title_raw = None
         self.title_xml = 'Quiz'
@@ -641,7 +643,7 @@ class Quiz(object):
         # the question, to avoid the issue of multiple Markdown
         # representations of the same XML.
         self.question_set: Set[str] = set()
-        self.md = Markdown(config)
+        self.md = Markdown(config, base_dir=self.resource_path)
         self.images: Dict[str, Image] = self.md.images
         self._next_question_attr = {}
         self._next_question_attr_linenum_start: int | None = None
@@ -796,15 +798,20 @@ class Quiz(object):
 
             points_possible = 0
             digests = []
+            in_group = False
             for x in self.questions_and_delims:
                 if isinstance(x, Question):
-                    points_possible += x.points_possible
+                    # Grouped questions are also in this list. Their points are
+                    # counted once, on the group, as pick * points per question.
+                    if not in_group:
+                        points_possible += x.points_possible
                     digests.append(x.hash_digest)
                 elif isinstance(x, GroupStart):
+                    in_group = True
                     points_possible += x.group.points_per_question*x.group.pick
                     digests.append(x.group.hash_digest)
                 elif isinstance(x, GroupEnd):
-                    pass
+                    in_group = False
                 elif isinstance(x, TextRegion):
                     pass
                 else:
@@ -895,97 +902,85 @@ class Quiz(object):
         self.description_raw = text
         self.description_html_xml = self.md.md_to_html_xml(text)
 
-    def append_quiz_shuffle_answers(self, text: str, linenum_start: int, linenum_end: int):
+    def _parse_quiz_flag(self, text: str, *, current, already_message: str, extra_check=None) -> str:
+        '''
+        Validate a quiz-level true/false option. Return the lowercase value.
+        '''
         if self._next_question_attr:
             raise Text2qtiError('Expected question; question title and/or points were set but not used')
         if self.questions_and_delims:
             raise Text2qtiError('Must give quiz options before questions')
-        if self.shuffle_answers_raw is not None:
-            raise Text2qtiError('Quiz option "Shuffle answers" has already been set')
+        if current is not None:
+            raise Text2qtiError(already_message)
         if text not in ('true', 'True', 'false', 'False'):
             raise Text2qtiError('Expected option value "true" or "false"')
+        if extra_check is not None:
+            extra_check()
+        return text.lower()
+
+    def append_quiz_shuffle_answers(self, text: str, linenum_start: int, linenum_end: int):
+        value = self._parse_quiz_flag(
+            text,
+            current=self.shuffle_answers_raw,
+            already_message='Quiz option "Shuffle answers" has already been set',
+        )
         self.shuffle_answers_raw = text
-        self.shuffle_answers_xml = text.lower()
+        self.shuffle_answers_xml = value
 
     def append_quiz_show_correct_answers(self, text: str, linenum_start: int, linenum_end: int):
-        if self._next_question_attr:
-            raise Text2qtiError('Expected question; question title and/or points were set but not used')
-        if self.questions_and_delims:
-            raise Text2qtiError('Must give quiz options before questions')
-        if self.show_correct_answers_raw is not None:
-            raise Text2qtiError('Quiz option "Show correct answers" has already been set')
-        if text not in ('true', 'True', 'false', 'False'):
-            raise Text2qtiError('Expected option value "true" or "false"')
+        value = self._parse_quiz_flag(
+            text,
+            current=self.show_correct_answers_raw,
+            already_message='Quiz option "Show correct answers" has already been set',
+        )
         self.show_correct_answers_raw = text
-        self.show_correct_answers_xml = text.lower()
+        self.show_correct_answers_xml = value
 
     def append_quiz_one_question_at_a_time(self, text: str, linenum_start: int, linenum_end: int):
-        if self._next_question_attr:
-            raise Text2qtiError('Expected question; question title and/or points were set but not used')
-        if self.questions_and_delims:
-            raise Text2qtiError('Must give quiz options before questions')
-        if self.one_question_at_a_time_raw is not None:
-            raise Text2qtiError('Quiz option "One question at a time" has already been set')
-        if text not in ('true', 'True', 'false', 'False'):
-            raise Text2qtiError('Expected option value "true" or "false"')
+        value = self._parse_quiz_flag(
+            text,
+            current=self.one_question_at_a_time_raw,
+            already_message='Quiz option "One question at a time" has already been set',
+        )
         self.one_question_at_a_time_raw = text
-        self.one_question_at_a_time_xml = text.lower()
+        self.one_question_at_a_time_xml = value
 
     def append_quiz_cant_go_back(self, text: str, linenum_start: int, linenum_end: int):
-        if self._next_question_attr:
-            raise Text2qtiError('Expected question; question title and/or points were set but not used')
-        if self.questions_and_delims:
-            raise Text2qtiError('Must give quiz options before questions')
-        if self.cant_go_back_raw is not None:
-            raise Text2qtiError('''Quiz option "Can't go back" has already been set''')
-        if text not in ('true', 'True', 'false', 'False'):
-            raise Text2qtiError('Expected option value "true" or "false"')
-        if self.one_question_at_a_time_xml != 'true':
-            raise Text2qtiError('''Must set "One question at a time" to "true" before setting "Can't go back"''')
+        def require_one_at_a_time():
+            if self.one_question_at_a_time_xml != 'true':
+                raise Text2qtiError('''Must set "One question at a time" to "true" before setting "Can't go back"''')
+        value = self._parse_quiz_flag(
+            text,
+            current=self.cant_go_back_raw,
+            already_message='''Quiz option "Can't go back" has already been set''',
+            extra_check=require_one_at_a_time,
+        )
         self.cant_go_back_raw = text
-        self.cant_go_back_xml = text.lower()
+        self.cant_go_back_xml = value
 
     def append_quiz_feedback_is_solution(self, text: str, linenum_start: int, linenum_end: int):
-        if self._next_question_attr:
-            raise Text2qtiError('Expected question; question title and/or points were set but not used')
-        if self.questions_and_delims:
-            raise Text2qtiError('Must give quiz options before questions')
-        if self.feedback_is_solution is not None:
-            raise Text2qtiError('Quiz option "feedback is solution" has already been set')
-        if text in ('true', 'True'):
-            self.feedback_is_solution = True
-        elif text in ('false', 'False'):
-            self.feedback_is_solution = False
-        else:
-            raise Text2qtiError('Expected option value "true" or "false"')
+        value = self._parse_quiz_flag(
+            text,
+            current=self.feedback_is_solution,
+            already_message='Quiz option "feedback is solution" has already been set',
+        )
+        self.feedback_is_solution = value == 'true'
 
     def append_quiz_solutions_sample_groups(self, text: str, linenum_start: int, linenum_end: int):
-        if self._next_question_attr:
-            raise Text2qtiError('Expected question; question title and/or points were set but not used')
-        if self.questions_and_delims:
-            raise Text2qtiError('Must give quiz options before questions')
-        if self.solutions_sample_groups is not None:
-            raise Text2qtiError('Quiz option "solutions sample groups" has already been set')
-        if text in ('true', 'True'):
-            self.solutions_sample_groups = True
-        elif text in ('false', 'False'):
-            self.solutions_sample_groups = False
-        else:
-            raise Text2qtiError('Expected option value "true" or "false"')
+        value = self._parse_quiz_flag(
+            text,
+            current=self.solutions_sample_groups,
+            already_message='Quiz option "solutions sample groups" has already been set',
+        )
+        self.solutions_sample_groups = value == 'true'
 
     def append_quiz_solutions_randomize_groups(self, text: str, linenum_start: int, linenum_end: int):
-        if self._next_question_attr:
-            raise Text2qtiError('Expected question; question title and/or points were set but not used')
-        if self.questions_and_delims:
-            raise Text2qtiError('Must give quiz options before questions')
-        if self.solutions_randomize_groups is not None:
-            raise Text2qtiError('Quiz option "solutions randomize groups" has already been set')
-        if text in ('true', 'True'):
-            self.solutions_randomize_groups = True
-        elif text in ('false', 'False'):
-            self.solutions_randomize_groups = False
-        else:
-            raise Text2qtiError('Expected option value "true" or "false"')
+        value = self._parse_quiz_flag(
+            text,
+            current=self.solutions_randomize_groups,
+            already_message='Quiz option "solutions randomize groups" has already been set',
+        )
+        self.solutions_randomize_groups = value == 'true'
 
     def append_text_title(self, text: str, linenum_start: int, linenum_end: int):
         if self._next_question_attr:

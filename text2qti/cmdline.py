@@ -9,19 +9,13 @@
 
 
 import argparse
-import os
 import pathlib
-import platform
-import shutil
-import subprocess
 import sys
-import textwrap
 from .version import __version__ as version
 from .err import Text2qtiError
 from .config import Config
 from .quiz import Quiz
-from .qti import QTI
-from .export import quiz_to_pandoc
+from .convert import export_solutions, read_quiz_text, write_qti
 from .preview import quiz_to_preview_json
 
 
@@ -55,7 +49,17 @@ def main():
     parser.add_argument('file',
                         help='File to convert from text to QTI')
     args = parser.parse_args()
+    try:
+        run(args)
+    except Text2qtiError as e:
+        print(e, file=sys.stderr)
+        sys.exit(1)
 
+
+def run(args):
+    '''
+    Convert a quiz file using parsed command-line arguments.
+    '''
     config = Config()
     config.load()
     if args.latex_render_url is not None:
@@ -67,24 +71,16 @@ def main():
 
     file_path = pathlib.Path(args.file).expanduser()
     file_path_abs = file_path.absolute()
-    try:
-        text = file_path.read_text(encoding='utf-8-sig')  # Handle BOM for Windows
-    except FileNotFoundError:
-        raise Text2qtiError(f'File "{file_path}" does not exist')
-    except PermissionError as e:
-        raise Text2qtiError(f'File "{file_path}" cannot be read due to permission error:\n{e}')
-    except UnicodeDecodeError as e:
-        raise Text2qtiError(f'File "{file_path}" is not encoded in valid UTF-8:\n{e}')
+    text = read_quiz_text(file_path)
 
-    cwd = pathlib.Path.cwd()
     if args.solutions:
-        qti_path = pathlib.Path(f'{file_path.stem}.zip')
+        qti_path = file_path.parent / f'{file_path.stem}.zip'
         solutions_paths = [pathlib.Path(x).expanduser().absolute() for x in args.solutions]
     elif args.only_solutions:
         qti_path = None
         solutions_paths = [pathlib.Path(x).expanduser().absolute() for x in args.only_solutions]
     else:
-        qti_path = pathlib.Path(f'{file_path.stem}.zip')
+        qti_path = file_path.parent / f'{file_path.stem}.zip'
         solutions_paths = None
     if solutions_paths is not None:
         if file_path_abs in solutions_paths:
@@ -95,58 +91,12 @@ def main():
     if args.preview:
         solutions_paths = None
         qti_path = None
-    os.chdir(file_path.parent)
-    try:
-        # Quiz and any solutions should only be generated once each so that
-        # any randomization is only invoked once.
-        quiz = Quiz(text, config=config, source_name=file_path.as_posix())
-        if solutions_paths is not None:
-            solutions_text = quiz_to_pandoc(quiz, solutions=True)
-            for solutions_path in solutions_paths:
-                if solutions_path.suffix.lower() == '.pdf':
-                    if not shutil.which('pandoc'):
-                        raise Text2qtiError('Exporting solutions in PDF format requires Pandoc (https://pandoc.org/)')
-                    if not shutil.which('pdflatex'):
-                        raise Text2qtiError('Exporting solutions in PDF format requires LaTeX (https://www.tug.org/texlive/ or https://miktex.org/)')
-                    if platform.system() == 'Windows':
-                        cmd = [shutil.which('pandoc'), '-f', 'markdown', '-o', str(solutions_path)]
-                    else:
-                        cmd = ['pandoc', '-f', 'markdown', '-o', str(solutions_path)]
-                    try:
-                        proc = subprocess.run(
-                            cmd,
-                            input=solutions_text,
-                            capture_output=True,
-                            check=True,
-                            encoding='utf8'
-                        )
-                    except subprocess.CalledProcessError as e:
-                        raise Text2qtiError(f'Pandoc failed:\n{"-"*78}\n{e}\n{"-"*78}')
-                elif solutions_path.suffix.lower() == '.html':
-                    if not shutil.which('pandoc'):
-                        raise Text2qtiError('Exporting solutions in HTML format requires Pandoc (https://pandoc.org/)')
-                    if platform.system() == 'Windows':
-                        cmd = [shutil.which('pandoc'), '-f', 'markdown', '-o', str(solutions_path), '--mathjax', '-s']
-                    else:
-                        cmd = ['pandoc', '-f', 'markdown', '-o', str(solutions_path), '--mathjax', '-s']
-                    try:
-                        proc = subprocess.run(
-                            cmd,
-                            input=solutions_text,
-                            capture_output=True,
-                            check=True,
-                            encoding='utf8'
-                        )
-                    except subprocess.CalledProcessError as e:
-                        raise Text2qtiError(f'Pandoc failed:\n{"-"*78}\n{e}\n{"-"*78}')
-                elif solutions_path.suffix.lower() in ('.md', '.markdown'):
-                    solutions_path.write_text(solutions_text, encoding='utf8')
-                else:
-                    raise ValueError
-        if qti_path is not None:
-            qti = QTI(quiz)
-            qti.save(qti_path)
-        if args.preview:
-            print(quiz_to_preview_json(quiz), file=sys.stdout)
-    finally:
-        os.chdir(cwd)
+    # Quiz and any solutions should only be generated once each so that
+    # any randomization is only invoked once.
+    quiz = Quiz(text, config=config, source_name=file_path.as_posix(), resource_path=file_path.parent)
+    if solutions_paths is not None:
+        export_solutions(quiz, solutions_paths)
+    if qti_path is not None:
+        write_qti(quiz, qti_path)
+    if args.preview:
+        print(quiz_to_preview_json(quiz), file=sys.stdout)

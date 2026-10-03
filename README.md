@@ -212,9 +212,9 @@ are listed below.  Depending on your system, you may need to use `python3`
 instead of `python` in the commands below.  This will often be the case for
 Linux and macOS.
 
-* You can install using the included `setup.py` by running
+* Install with `pip` from the directory that contains `pyproject.toml`:
   ```
-  python setup.py install
+  python -m pip install .
   ```
   Depending on your system configuration, especially if you do not have root
   or administrator privileges, you may want to
@@ -222,12 +222,13 @@ Linux and macOS.
   For example, you can add `--user` to install under `%APPDATA%\Python` (Windows), `~/.local` (UNIX, and Mac OS X non-framework builds), or
   `~/Library/Python/<VERSION>` (Mac framework builds):
   ```
-  python setup.py install --user
+  python -m pip install --user .
   ```
-* You can install using `pip`.  For example, in the directory with `setup.py`,
-  run this:
+* To work on text2qti and run the tests, install the development extra and
+  then run pytest:
   ```
-  python -m pip install .
+  python -m pip install -e ".[dev]"
+  python -m pytest
   ```
 
 

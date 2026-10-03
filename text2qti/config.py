@@ -23,7 +23,11 @@ class Config(dict):
     If `.load()` is invoked, a config file in BespON format is loaded if it
     exists, and otherwise is created if possible.
     '''
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, config_path: pathlib.Path | str | None = None, **kwargs):
+        if config_path is None:
+            self._config_path = self._default_config_path.expanduser()
+        else:
+            self._config_path = pathlib.Path(config_path).expanduser()
         self.loaded_config_file = False
         self.update(self._defaults)
         self.update(dict(*args, **kwargs))
@@ -38,7 +42,7 @@ class Config(dict):
         'pandoc_mathml': lambda x: isinstance(x, bool),
         'run_code_blocks': lambda x: isinstance(x, bool),
     }
-    _config_path = pathlib.Path('~/.text2qti.bespon').expanduser()
+    _default_config_path = pathlib.Path('~/.text2qti.bespon')
 
     def __setitem__(self, key, value):
         if key not in self._key_check:
